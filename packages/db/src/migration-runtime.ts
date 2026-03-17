@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
+import postgres from "postgres";
 import { ensurePostgresDatabase } from "./client.js";
 import { resolveDatabaseTarget } from "./runtime-config.js";
 
@@ -98,6 +99,25 @@ async function loadEmbeddedPostgresCtor(): Promise<EmbeddedPostgresCtor> {
   }
 }
 
+async function matchesEmbeddedDataDir(
+  adminConnectionString: string,
+  expectedDataDir: string,
+): Promise<boolean> {
+  const sql = postgres(adminConnectionString, { max: 1, onnotice: () => {} });
+  try {
+    const rows = await sql<{ data_directory: string | null }[]>`
+      SELECT current_setting('data_directory', true) AS data_directory
+    `;
+    const actual = rows[0]?.data_directory;
+    if (typeof actual !== "string" || actual.length === 0) return false;
+    return path.resolve(actual) === path.resolve(expectedDataDir);
+  } catch {
+    return false;
+  } finally {
+    await sql.end();
+  }
+}
+
 async function ensureEmbeddedPostgresConnection(
   dataDir: string,
   preferredPort: number,
@@ -112,6 +132,10 @@ async function ensureEmbeddedPostgresConnection(
 
   if (!runningPid && existsSync(pgVersionFile)) {
     try {
+      const matchesDataDir = await matchesEmbeddedDataDir(preferredAdminConnectionString, dataDir);
+      if (!matchesDataDir) {
+        throw new Error("reachable postgres does not use the expected embedded data directory");
+      }
       await ensurePostgresDatabase(preferredAdminConnectionString, "paperclip");
       process.emitWarning(
         `Adopting an existing PostgreSQL instance on port ${preferredPort} for embedded data dir ${dataDir} because postmaster.pid is missing.`,

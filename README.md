@@ -1,292 +1,360 @@
-<p align="center">
-  <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
-</p>
+# NanoClip
 
-<p align="center">
-  <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
-  <a href="https://paperclip.ing/docs"><strong>Docs</strong></a> &middot;
-  <a href="https://github.com/paperclipai/paperclip"><strong>GitHub</strong></a> &middot;
-  <a href="https://discord.gg/m4HZY7xNG3"><strong>Discord</strong></a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/paperclipai/paperclip/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
-  <a href="https://github.com/paperclipai/paperclip/stargazers"><img src="https://img.shields.io/github/stars/paperclipai/paperclip?style=flat" alt="Stars" /></a>
-  <a href="https://discord.gg/m4HZY7xNG3"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
-</p>
-
-<br/>
-
-<div align="center">
-  <video src="https://github.com/user-attachments/assets/773bdfb2-6d1e-4e30-8c5f-3487d5b70c8f" width="600" controls></video>
-</div>
-
-<br/>
-
-## What is Paperclip?
-
-# Open-source orchestration for zero-human companies
-
-**If OpenClaw is an _employee_, Paperclip is the _company_**
-
-Paperclip is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track your agents' work and costs from one dashboard.
-
-It looks like a task manager — but under the hood it has org charts, budgets, governance, goal alignment, and agent coordination.
-
-**Manage business goals, not pull requests.**
-
-|        | Step            | Example                                                            |
-| ------ | --------------- | ------------------------------------------------------------------ |
-| **01** | Define the goal | _"Build the #1 AI note-taking app to $1M MRR."_                    |
-| **02** | Hire the team   | CEO, CTO, engineers, designers, marketers — any bot, any provider. |
-| **03** | Approve and run | Review strategy. Set budgets. Hit go. Monitor from the dashboard.  |
-
-<br/>
-
-> **COMING SOON: Clipmart** — Download and run entire companies with one click. Browse pre-built company templates — full org structures, agent configs, and skills — and import them into your Paperclip instance in seconds.
-
-<br/>
-
-<div align="center">
-<table>
-  <tr>
-    <td align="center"><strong>Works<br/>with</strong></td>
-    <td align="center"><img src="doc/assets/logos/openclaw.svg" width="32" alt="OpenClaw" /><br/><sub>OpenClaw</sub></td>
-    <td align="center"><img src="doc/assets/logos/claude.svg" width="32" alt="Claude" /><br/><sub>Claude Code</sub></td>
-    <td align="center"><img src="doc/assets/logos/codex.svg" width="32" alt="Codex" /><br/><sub>Codex</sub></td>
-    <td align="center"><img src="doc/assets/logos/cursor.svg" width="32" alt="Cursor" /><br/><sub>Cursor</sub></td>
-    <td align="center"><img src="doc/assets/logos/bash.svg" width="32" alt="Bash" /><br/><sub>Bash</sub></td>
-    <td align="center"><img src="doc/assets/logos/http.svg" width="32" alt="HTTP" /><br/><sub>HTTP</sub></td>
-  </tr>
-</table>
-
-<em>If it can receive a heartbeat, it's hired.</em>
-
-</div>
-
-<br/>
-
-## Paperclip is right for you if
-
-- ✅ You want to build **autonomous AI companies**
-- ✅ You **coordinate many different agents** (OpenClaw, Codex, Claude, Cursor) toward a common goal
-- ✅ You have **20 simultaneous Claude Code terminals** open and lose track of what everyone is doing
-- ✅ You want agents running **autonomously 24/7**, but still want to audit work and chime in when needed
-- ✅ You want to **monitor costs** and enforce budgets
-- ✅ You want a process for managing agents that **feels like using a task manager**
-- ✅ You want to manage your autonomous businesses **from your phone**
-
-<br/>
-
-## Features
-
-<table>
-<tr>
-<td align="center" width="33%">
-<h3>🔌 Bring Your Own Agent</h3>
-Any agent, any runtime, one org chart. If it can receive a heartbeat, it's hired.
-</td>
-<td align="center" width="33%">
-<h3>🎯 Goal Alignment</h3>
-Every task traces back to the company mission. Agents know <em>what</em> to do and <em>why</em>.
-</td>
-<td align="center" width="33%">
-<h3>💓 Heartbeats</h3>
-Agents wake on a schedule, check work, and act. Delegation flows up and down the org chart.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>💰 Cost Control</h3>
-Monthly budgets per agent. When they hit the limit, they stop. No runaway costs.
-</td>
-<td align="center">
-<h3>🏢 Multi-Company</h3>
-One deployment, many companies. Complete data isolation. One control plane for your portfolio.
-</td>
-<td align="center">
-<h3>🎫 Ticket System</h3>
-Every conversation traced. Every decision explained. Full tool-call tracing and immutable audit log.
-</td>
-</tr>
-<tr>
-<td align="center">
-<h3>🛡️ Governance</h3>
-You're the board. Approve hires, override strategy, pause or terminate any agent — at any time.
-</td>
-<td align="center">
-<h3>📊 Org Chart</h3>
-Hierarchies, roles, reporting lines. Your agents have a boss, a title, and a job description.
-</td>
-<td align="center">
-<h3>📱 Mobile Ready</h3>
-Monitor and manage your autonomous businesses from anywhere.
-</td>
-</tr>
-</table>
-
-<br/>
-
-## Problems Paperclip solves
-
-| Without Paperclip                                                                                                                     | With Paperclip                                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| ❌ You have 20 Claude Code tabs open and can't track which one does what. On reboot you lose everything.                              | ✅ Tasks are ticket-based, conversations are threaded, sessions persist across reboots.                                                |
-| ❌ You manually gather context from several places to remind your bot what you're actually doing.                                     | ✅ Context flows from the task up through the project and company goals — your agent always knows what to do and why.                  |
-| ❌ Folders of agent configs are disorganized and you're re-inventing task management, communication, and coordination between agents. | ✅ Paperclip gives you org charts, ticketing, delegation, and governance out of the box — so you run a company, not a pile of scripts. |
-| ❌ Runaway loops waste hundreds of dollars of tokens and max your quota before you even know what happened.                           | ✅ Cost tracking surfaces token budgets and throttles agents when they're out. Management prioritizes with budgets.                    |
-| ❌ You have recurring jobs (customer support, social, reports) and have to remember to manually kick them off.                        | ✅ Heartbeats handle regular work on a schedule. Management supervises.                                                                |
-| ❌ You have an idea, you have to find your repo, fire up Claude Code, keep a tab open, and babysit it.                                | ✅ Add a task in Paperclip. Your coding agent works on it until it's done. Management reviews their work.                              |
-
-<br/>
-
-## Why Paperclip is special
-
-Paperclip handles the hard orchestration details correctly.
-
-|                                   |                                                                                                               |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Atomic execution.**             | Task checkout and budget enforcement are atomic, so no double-work and no runaway spend.                      |
-| **Persistent agent state.**       | Agents resume the same task context across heartbeats instead of restarting from scratch.                     |
-| **Runtime skill injection.**      | Agents can learn Paperclip workflows and project context at runtime, without retraining.                      |
-| **Governance with rollback.**     | Approval gates are enforced, config changes are revisioned, and bad changes can be rolled back safely.        |
-| **Goal-aware execution.**         | Tasks carry full goal ancestry so agents consistently see the "why," not just a title.                        |
-| **Portable company templates.**   | Export/import orgs, agents, and skills with secret scrubbing and collision handling.                          |
-| **True multi-company isolation.** | Every entity is company-scoped, so one deployment can run many companies with separate data and audit trails. |
-
-<br/>
-
-## What Paperclip is not
-
-|                              |                                                                                                                      |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **Not a chatbot.**           | Agents have jobs, not chat windows.                                                                                  |
-| **Not an agent framework.**  | We don't tell you how to build agents. We tell you how to run a company made of them.                                |
-| **Not a workflow builder.**  | No drag-and-drop pipelines. Paperclip models companies — with org charts, goals, budgets, and governance.            |
-| **Not a prompt manager.**    | Agents bring their own prompts, models, and runtimes. Paperclip manages the organization they work in.               |
-| **Not a single-agent tool.** | This is for teams. If you have one agent, you probably don't need Paperclip. If you have twenty — you definitely do. |
-| **Not a code review tool.**  | Paperclip orchestrates work, not pull requests. Bring your own review process.                                       |
-
-<br/>
-
-## Quickstart
-
-Open source. Self-hosted. No Paperclip account required.
-
-```bash
-npx paperclipai onboard --yes
-```
-
-If you already have Paperclip configured, rerunning `onboard` keeps the existing config in place. Use `paperclipai configure` to edit settings.
-
-Or manually:
-
-```bash
-git clone https://github.com/paperclipai/paperclip.git
-cd paperclip
-pnpm install
-pnpm dev
-```
-
-This starts the API server at `http://localhost:3100`. An embedded PostgreSQL database is created automatically — no setup required.
-
-> **Requirements:** Node.js 20+, pnpm 9.15+
-
-<br/>
-
-## FAQ
-
-**What does a typical setup look like?**
-Locally, a single Node.js process manages an embedded Postgres and local file storage. For production, point it at your own Postgres and deploy however you like. Configure projects, agents, and goals — the agents take care of the rest.
-
-If you're a solo-entreprenuer you can use Tailscale to access Paperclip on the go. Then later you can deploy to e.g. Vercel when you need it.
-
-**Can I run multiple companies?**
-Yes. A single deployment can run an unlimited number of companies with complete data isolation.
-
-**How is Paperclip different from agents like OpenClaw or Claude Code?**
-Paperclip _uses_ those agents. It orchestrates them into a company — with org charts, budgets, goals, governance, and accountability.
-
-**Why should I use Paperclip instead of just pointing my OpenClaw to Asana or Trello?**
-Agent orchestration has subtleties in how you coordinate who has work checked out, how to maintain sessions, monitoring costs, establishing governance - Paperclip does this for you.
-
-(Bring-your-own-ticket-system is on the Roadmap)
-
-**Do agents run continuously?**
-By default, agents run on scheduled heartbeats and event-based triggers (task assignment, @-mentions). You can also hook in continuous agents like OpenClaw. You bring your agent and Paperclip coordinates.
-
-<br/>
-
-## Development
-
-```bash
-pnpm dev              # Full dev (API + UI, watch mode)
-pnpm dev:once         # Full dev without file watching
-pnpm dev:server       # Server only
-pnpm build            # Build all
-pnpm typecheck        # Type checking
-pnpm test:run         # Run tests
-pnpm db:generate      # Generate DB migration
-pnpm db:migrate       # Apply migrations
-```
-
-See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
-
-<br/>
-
-## Roadmap
-
-- ✅ Plugin system (e.g. add a knowledge base, custom tracing, queues, etc)
-- ✅ Get OpenClaw / claw-style agent employees
-- ✅ companies.sh - import and export entire organizations
-- ✅ Easy AGENTS.md configurations
-- ✅ Skills Manager
-- ✅ Scheduled Routines
-- ✅ Better Budgeting
-- ⚪ Artifacts & Deployments
-- ⚪ CEO Chat
-- ⚪ MAXIMIZER MODE
-- ⚪ Multiple Human Users
-- ⚪ Cloud / Sandbox agents (e.g. Cursor / e2b agents)
-- ⚪ Cloud deployments
-- ⚪ Desktop App
-
-<br/>
-
-## Community & Plugins
-
-Find Plugins and more at [awesome-paperclip](https://github.com/gsxdsm/awesome-paperclip)
-
-## Contributing
-
-We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for details.
-
-<br/>
-
-## Community
-
-- [Discord](https://discord.gg/m4HZY7xNG3) — Join the community
-- [GitHub Issues](https://github.com/paperclipai/paperclip/issues) — bugs and feature requests
-- [GitHub Discussions](https://github.com/paperclipai/paperclip/discussions) — ideas and RFC
-
-<br/>
-
-## License
-
-MIT &copy; 2026 Paperclip
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/image?repos=paperclipai/paperclip&type=date&legend=top-left)](https://www.star-history.com/?repos=paperclipai%2Fpaperclip&type=date&legend=top-left)
-
-<br/>
+**Open-source AI agent orchestration platform.**  
+Run teams of AI agents that respond to issues, chat in threads, and work autonomously — all from a **single binary** on any machine, including Android phones running Termux.
 
 ---
 
-<p align="center">
-  <img src="doc/assets/footer.jpg" alt="" width="720" />
-</p>
+## What it does
 
-<p align="center">
-  <sub>Open source under MIT. Built for people who want to run companies, not babysit agents.</sub>
-</p>
+NanoClip lets you create AI agents backed by local or cloud models and assign them to issues in projects. Agents:
+
+- **Respond to user comments** on issues, maintaining full conversation history
+- **Stream live output** so you can watch progress in real time
+- **Record activity** — every run, message, and cost event is logged
+- **Create sub-issues** when they break work down further after a run
+- **Run on a schedule** via Routines (cron-style triggers)
+
+All state is stored in a single SQLite file (default) or MariaDB (recommended for production). The whole platform ships as one Go binary that also serves the React UI.
+
+---
+
+## Adapter types
+
+Only three adapter types are supported — by design, to keep the surface area small:
+
+| Type | Description |
+|------|-------------|
+| `ollama_local` | Runs against a local [Ollama](https://ollama.com) instance. Point it at `http://localhost:11434` or any remote URL. |
+| `openrouter_local` | Routes through [OpenRouter](https://openrouter.ai) — access 100+ models with one API key. |
+| `http` | Calls any HTTP webhook endpoint. Bring your own agent runner. |
+
+---
+
+## Architecture
+
+```
+nanoclip/
+├── go-server/          # Go backend (Gin + GORM + SQLite/MariaDB)
+│   ├── handlers/       # REST API route handlers
+│   ├── models/         # GORM models (agents, issues, runs, inbox, …)
+│   ├── services/       # Heartbeat loop — agent run scheduler
+│   ├── ws/             # WebSocket hub for live events
+│   ├── middleware/      # Auth (session cookie + agent JWT)
+│   └── scripts/        # Dev, build, and Termux scripts
+└── ui/                 # React + Vite + Tailwind frontend
+    └── src/
+        ├── adapters/   # Per-adapter UI config forms
+        ├── api/        # Typed API client
+        ├── components/ # Shared UI components
+        └── pages/      # Route pages
+```
+
+The frontend is embedded into the Go binary at build time — no separate web server needed in production.
+
+---
+
+## Quickstart (Desktop / Server)
+
+### Prerequisites
+
+- Go 1.21+
+- Node.js 20+ and pnpm
+
+### Development
+
+```bash
+# Install frontend dependencies
+pnpm install
+
+# Terminal 1: build and start the Go backend (port 8080)
+bash go-server/scripts/run-dev.sh
+
+# Terminal 2: start the Vite dev server (port 5000, proxies /api → :8080)
+pnpm --filter @nanoclip/ui dev
+```
+
+Open `http://localhost:5000`.
+
+### Production build
+
+```bash
+# 1. Build the React frontend
+pnpm --filter @nanoclip/ui build
+
+# 2. Build the Go binary (embeds ui/dist/ automatically)
+cd go-server && go build -o nanoclip .
+
+# 3. Run
+./nanoclip
+```
+
+The binary listens on port `8080` by default. Set `GO_PORT` to override.
+
+---
+
+## Termux Setup (Android ARM64)
+
+This section walks through running NanoClip entirely on an Android device using [Termux](https://termux.dev).
+
+### 1. Install Termux
+
+Download **Termux** from [F-Droid](https://f-droid.org/packages/com.termux/) (recommended — the Play Store version is outdated).
+
+### 2. Install packages
+
+Open Termux and run:
+
+```bash
+pkg update && pkg upgrade -y
+pkg install -y golang nodejs-lts mariadb git
+```
+
+> **Note:** `nodejs-lts` provides Node.js. If it's not available, try `pkg install nodejs`.
+
+Install pnpm:
+
+```bash
+npm install -g pnpm
+```
+
+### 3. Clone NanoClip
+
+```bash
+git clone https://github.com/artistrydat/Nanoclip.git
+cd Nanoclip
+```
+
+### 4. Set up MariaDB
+
+MariaDB is recommended on Termux because SQLite may have file-locking issues on some Android kernels.
+
+Initialize and start MariaDB:
+
+```bash
+bash go-server/scripts/setup-mariadb.sh
+```
+
+This script will:
+- Initialize the MariaDB data directory at `~/.nanoclip/mariadb/`
+- Start the MariaDB daemon in the background
+- Create the `nanoclip` database, user `nanoclip`, and password `nanoclip`
+- Print the `MARIADB_DSN` value to paste into your `.env`
+
+You should see output ending with:
+
+```
+Add to your .env:
+  MARIADB_DSN=nanoclip:nanoclip@tcp(127.0.0.1:3306)/nanoclip?charset=utf8mb4&parseTime=True&loc=UTC
+```
+
+### 5. Create a `.env` file
+
+In the project root, create `.env`:
+
+```bash
+cat > .env <<'EOF'
+MARIADB_DSN=nanoclip:nanoclip@tcp(127.0.0.1:3306)/nanoclip?charset=utf8mb4&parseTime=True&loc=UTC
+JWT_SECRET=change-me-to-a-random-string
+LOCAL_TRUSTED=true
+GO_PORT=8080
+EOF
+```
+
+> Set `LOCAL_TRUSTED=true` to skip login entirely — recommended for personal use on your phone.  
+> Replace `JWT_SECRET` with any random string (e.g., output of `openssl rand -hex 32`).
+
+### 6. Build the UI
+
+```bash
+pnpm install
+pnpm --filter @nanoclip/ui build
+```
+
+> This step can take several minutes on a phone. Run it once; the built files are embedded into the binary.
+
+### 7. Build and run NanoClip
+
+```bash
+cd go-server
+go build -o nanoclip .
+./nanoclip
+```
+
+Or, to start MariaDB automatically along with the server:
+
+```bash
+bash go-server/scripts/start.sh
+```
+
+Open your phone's browser and navigate to `http://localhost:8080`.
+
+### 8. Keep it running (optional)
+
+To keep NanoClip alive when you exit Termux, use `nohup`:
+
+```bash
+nohup bash go-server/scripts/start.sh &> ~/nanoclip.log &
+```
+
+Or install [Termux:Boot](https://f-droid.org/packages/com.termux.boot/) (from F-Droid) and create a start script:
+
+```bash
+mkdir -p ~/.termux/boot
+cat > ~/.termux/boot/nanoclip.sh <<'EOF'
+#!/data/data/com.termux/files/usr/bin/bash
+cd ~/Nanoclip
+bash go-server/scripts/start.sh &>> ~/nanoclip.log
+EOF
+chmod +x ~/.termux/boot/nanoclip.sh
+```
+
+---
+
+## MariaDB Setup (Manual)
+
+If you prefer to configure MariaDB yourself instead of using the setup script:
+
+### Step 1 — Install MariaDB
+
+**Termux:**
+```bash
+pkg install mariadb
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install mariadb-server
+sudo systemctl start mariadb
+```
+
+**macOS (Homebrew):**
+```bash
+brew install mariadb
+brew services start mariadb
+```
+
+### Step 2 — Create database and user
+
+Connect to MariaDB as root:
+
+```bash
+# Termux (no root password by default):
+mariadb -u root
+
+# Linux with sudo:
+sudo mariadb -u root
+```
+
+Run these SQL commands:
+
+```sql
+CREATE DATABASE IF NOT EXISTS `nanoclip`
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS 'nanoclip'@'localhost' IDENTIFIED BY 'your-password';
+CREATE USER IF NOT EXISTS 'nanoclip'@'127.0.0.1' IDENTIFIED BY 'your-password';
+
+GRANT ALL PRIVILEGES ON `nanoclip`.* TO 'nanoclip'@'localhost';
+GRANT ALL PRIVILEGES ON `nanoclip`.* TO 'nanoclip'@'127.0.0.1';
+
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+### Step 3 — Connect NanoClip to MariaDB
+
+Set the `MARIADB_DSN` environment variable (or add it to `.env` in the project root):
+
+```
+MARIADB_DSN=nanoclip:your-password@tcp(127.0.0.1:3306)/nanoclip?charset=utf8mb4&parseTime=True&loc=UTC
+```
+
+NanoClip uses GORM and will **auto-migrate all tables** on first start — no manual schema creation needed.
+
+### Step 4 — Verify the connection
+
+Start NanoClip and look for this line in the logs:
+
+```
+[db] connecting to MariaDB...
+[db] migrations applied
+```
+
+If you see `[db] using SQLite`, the `MARIADB_DSN` variable was not picked up — check your `.env` file path and syntax.
+
+---
+
+## Configuration reference
+
+All configuration is via environment variables (or a `.env` file in the project root):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GO_PORT` | `8080` | HTTP port the server listens on |
+| `MARIADB_DSN` | *(unset)* | MariaDB connection string. If unset, SQLite is used. |
+| `NANOCLIP_DATA_DIR` | `~/.nanoclip/` | Directory for SQLite database file |
+| `JWT_SECRET` | auto-generated | Secret for agent JWT tokens. Set explicitly in production. |
+| `LOCAL_TRUSTED` | `false` | Set to `true` to skip auth entirely (single-user / local mode) |
+
+### Local trusted mode
+
+Set `LOCAL_TRUSTED=true` to run without authentication. A `local-system-user` account with `instance_admin` role is created automatically. Ideal for running on a personal machine or phone where you are the only user.
+
+---
+
+## Cross-compiling for Termux (from another machine)
+
+If you want to build the ARM64 binary on a faster machine and copy it to your phone:
+
+```bash
+bash go-server/scripts/build-termux.sh
+```
+
+This produces `go-server/nanoclip-arm64`. Copy it to your phone:
+
+```bash
+adb push go-server/nanoclip-arm64 /sdcard/nanoclip
+# Then in Termux:
+cp /sdcard/nanoclip ~/nanoclip
+chmod +x ~/nanoclip
+```
+
+---
+
+## API overview
+
+The REST API is served under `/api/`. Key route groups:
+
+- **`/api/auth`** — sign up, sign in, sign out, get session
+- **`/api/companies/:id`** — agents, issues, projects, routines, costs, members, skills, secrets, inbox, approvals, dashboard
+- **`/api/agents/:id`** — agent detail, permissions, runtime state, config revisions, skills
+- **`/api/issues/:id`** — comments, activity, sub-issues, runs, attachments, mark read/unread
+- **`/api/heartbeat-runs/:id`** — run events, log stream, cancel
+- **`/api/instance`** — instance-level settings and user management
+
+**WebSocket:** `/api/companies/:id/events/ws` — streams live run events, agent status changes, sub-issue creation, and inbox updates.
+
+---
+
+## Inbox & badge
+
+Every agent comment on an issue creates an `InboxItem`. The sidebar badge shows only **unread** items. Marking an issue read sets it to `read`; archiving sets it to `archived`. The badge clears immediately on read.
+
+---
+
+## Contributing
+
+1. Fork the repo
+2. Create a feature branch: `git checkout -b my-feature`
+3. Make your changes and verify: `go vet ./...` and `pnpm --filter @nanoclip/ui build`
+4. Open a pull request
+
+Bug reports and feature requests welcome via [GitHub Issues](https://github.com/artistrydat/Nanoclip/issues).
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

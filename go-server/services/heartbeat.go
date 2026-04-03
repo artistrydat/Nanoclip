@@ -276,7 +276,100 @@ func (s *HeartbeatService) finishRun(run *models.HeartbeatRun, exitCode *int, er
         s.hub.Publish(ws.LiveEvent{Type: "agent.updated", Payload: gin_H{"id": run.AgentID, "status": "idle"}})
 }
 
-// runOllamaAgent calls the Ollama HTTP API directly for ollama_local adapter type.
+// chatMessage is a generic role/content pair used by all adapters.
+type chatMessage struct {
+        Role    string
+        Content string
+}
+
+// buildSystemPrompt assembles the full system prompt for an agent:
+//  1. instruction files from the database (entry file first, then the rest)
+//  2. falls back to agent.Capabilities if no instruction files exist
+//  3. all company skills appended as labelled sections
+func (s *HeartbeatService) buildSystemPrompt(agent models.Agent) string {
+        prompt := fmt.Sprintf("You are %s, an AI agent.", agent.Name)
+        if agent.Capabilities != nil && *agent.Capabilities != "" {
+                prompt = *agent.Capabilities
+        }
+
+        // Load instruction files from DB (entry file first, then sorted by order/path)
+        var instrFiles []models.AgentInstructionFile
+        s.db.Where("agent_id = ?", agent.ID).
+                Order("is_entry_file desc, sort_order asc, path asc").
+                Find(&instrFiles)
+        if len(instrFiles) > 0 {
+                var sb strings.Builder
+                for i, f := range instrFiles {
+                        if i > 0 {
+                                sb.WriteString("\n\n")
+                        }
+                        sb.WriteString(strings.TrimSpace(f.Content))
+                }
+                prompt = sb.String()
+        }
+
+        // Append every company skill so the LLM knows all available tools/docs
+        var skills []models.CompanySkill
+        s.db.Where("company_id = ?", agent.CompanyID).Order("name asc").Find(&skills)
+        if len(skills) > 0 {
+                var sb strings.Builder
+                sb.WriteString(prompt)
+                sb.WriteString("\n\n---\n## Skills & Knowledge\n")
+                for _, skill := range skills {
+                        sb.WriteString(fmt.Sprintf("\n### %s", skill.Name))
+                        if skill.Description != nil && *skill.Description != "" {
+                                sb.WriteString(fmt.Sprintf("\n%s", *skill.Description))
+                        }
+                        if skill.Content != nil && *skill.Content != "" {
+                                sb.WriteString(fmt.Sprintf("\n\n%s", *skill.Content))
+                        }
+                        sb.WriteString("\n")
+                }
+                prompt = sb.String()
+        }
+
+        return prompt
+}
+
+// buildIssueUserMessage returns the first user-turn message that describes the issue.
+// It includes identifier, title, description, status, priority, and any attachments.
+func (s *HeartbeatService) buildIssueUserMessage(issue *models.Issue) string {
+        if issue == nil {
+                return "You have been activated. Please perform your role."
+        }
+
+        var sb strings.Builder
+        if issue.Identifier != nil && *issue.Identifier != "" {
+                sb.WriteString(fmt.Sprintf("Issue: %s\n", *issue.Identifier))
+        }
+        sb.WriteString(fmt.Sprintf("Title: %s\n", issue.Title))
+        sb.WriteString(fmt.Sprintf("Status: %s | Priority: %s\n", issue.Status, issue.Priority))
+        if issue.Description != nil && *issue.Description != "" {
+                sb.WriteString(fmt.Sprintf("\nDescription:\n%s", *issue.Description))
+        }
+        sb.WriteString(s.attachmentContext(issue.ID))
+        return sb.String()
+}
+
+// buildConversationHistory returns prior comments as alternating user/assistant turns.
+func (s *HeartbeatService) buildConversationHistory(issue *models.Issue) []chatMessage {
+        if issue == nil {
+                return nil
+        }
+        var priorComments []models.IssueComment
+        s.db.Where("issue_id = ?", issue.ID).Order("created_at asc").Find(&priorComments)
+        msgs := make([]chatMessage, 0, len(priorComments))
+        for _, c := range priorComments {
+                role := "user"
+                if c.AuthorAgentID != nil && *c.AuthorAgentID != "" {
+                        role = "assistant"
+                }
+                msgs = append(msgs, chatMessage{Role: role, Content: c.Body})
+        }
+        return msgs
+}
+
+// runOllamaAgent calls the Ollama HTTP API in a multi-turn agentic tool-calling loop.
 func (s *HeartbeatService) runOllamaAgent(agent models.Agent, issue *models.Issue, run *models.HeartbeatRun) {
         cfg := agent.AdapterConfig
 
@@ -289,138 +382,131 @@ func (s *HeartbeatService) runOllamaAgent(agent models.Agent, issue *models.Issu
                 model = v
         }
         apiKey, _ := cfg["apiKey"].(string)
-        timeoutSec := 120
+        timeoutSec := 180
         if v, ok := cfg["timeoutSec"].(float64); ok && v > 0 {
                 timeoutSec = int(v)
         }
 
-        // Build system prompt from agent capabilities or instructions file
-        systemPrompt := fmt.Sprintf("You are %s, an AI agent.", agent.Name)
-        if agent.Capabilities != nil && *agent.Capabilities != "" {
-                systemPrompt = *agent.Capabilities
-        }
-        if fp, ok := cfg["instructionsFilePath"].(string); ok && fp != "" {
-                if data, err := os.ReadFile(fp); err == nil {
-                        systemPrompt = string(data)
-                }
-        }
+        systemPrompt := s.buildSystemPrompt(agent)
+        userMsg := s.buildIssueUserMessage(issue)
+        history := s.buildConversationHistory(issue)
 
-        // Build user message from issue context
-        userMsg := "You have been activated. Please perform your role."
-        if issue != nil {
-                userMsg = fmt.Sprintf("Task: %s", issue.Title)
-                if issue.Description != nil && *issue.Description != "" {
-                        userMsg += "\n\n" + *issue.Description
-                }
-                userMsg += s.attachmentContext(issue.ID)
+        executor := newAgentToolExecutor(s.db, agent)
+        defer executor.close()
+        tools := executor.allTools()
+
+        // Build initial messages as generic maps for flexible tool message support
+        messages := []map[string]interface{}{
+                {"role": "system", "content": systemPrompt},
+                {"role": "user", "content": userMsg},
+        }
+        for _, h := range history {
+                messages = append(messages, map[string]interface{}{"role": h.Role, "content": h.Content})
         }
 
-        // Log a run event: starting
-        s.saveRunEvent(run.ID, "llm_call", fmt.Sprintf("Calling Ollama model %s at %s", model, baseURL), nil)
+        s.saveRunEvent(run.ID, "llm_call", fmt.Sprintf("Calling Ollama model %s at %s (tool-enabled)", model, baseURL), nil)
 
-        // Build Ollama chat request
+        // Ollama tool-call response shape
+        type ollamaToolCall struct {
+                Function struct {
+                        Name      string                 `json:"name"`
+                        Arguments map[string]interface{} `json:"arguments"`
+                } `json:"function"`
+        }
         type ollamaMessage struct {
-                Role    string `json:"role"`
-                Content string `json:"content"`
+                Role      string           `json:"role"`
+                Content   string           `json:"content"`
+                ToolCalls []ollamaToolCall `json:"tool_calls,omitempty"`
         }
-        type ollamaRequest struct {
-                Model    string          `json:"model"`
-                Messages []ollamaMessage `json:"messages"`
-                Stream   bool            `json:"stream"`
+        type ollamaResponse struct {
+                Message    ollamaMessage `json:"message"`
+                DoneReason string        `json:"done_reason"`
+                Done       bool          `json:"done"`
         }
-        messages := []ollamaMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: userMsg}}
-        if issue != nil {
-                var priorComments []models.IssueComment
-                s.db.Where("issue_id = ?", issue.ID).Order("created_at asc").Find(&priorComments)
-                for _, c := range priorComments {
-                        role := "user"
-                        if c.AuthorAgentID != nil && *c.AuthorAgentID != "" {
-                                role = "assistant"
-                        }
-                        messages = append(messages, ollamaMessage{Role: role, Content: c.Body})
+
+        var finalText string
+
+        for round := 0; round < maxToolRounds; round++ {
+                reqBody := map[string]interface{}{
+                        "model":    model,
+                        "messages": messages,
+                        "stream":   false,
+                        "tools":    tools,
+                }
+                bodyBytes, _ := json.Marshal(reqBody)
+                ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+
+                httpReq, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/api/chat", bytes.NewReader(bodyBytes))
+                if err != nil {
+                        cancel()
+                        s.finishRun(run, nil, "failed to build Ollama request: "+err.Error(), "ollama_error", issue)
+                        return
+                }
+                httpReq.Header.Set("Content-Type", "application/json")
+                if apiKey != "" {
+                        httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+                }
+
+                resp, err := http.DefaultClient.Do(httpReq)
+                cancel()
+                if err != nil {
+                        s.finishRun(run, nil, "Ollama request failed: "+err.Error(), "ollama_error", issue)
+                        return
+                }
+
+                if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+                        body, _ := io.ReadAll(resp.Body)
+                        resp.Body.Close()
+                        s.finishRun(run, nil, fmt.Sprintf("Ollama returned HTTP %d: %s", resp.StatusCode, string(body)), "ollama_error", issue)
+                        return
+                }
+
+                var ollamaResp ollamaResponse
+                if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+                        resp.Body.Close()
+                        s.finishRun(run, nil, "failed to parse Ollama response: "+err.Error(), "ollama_error", issue)
+                        return
+                }
+                resp.Body.Close()
+
+                msg := ollamaResp.Message
+
+                // No tool calls — this is the final text response
+                if len(msg.ToolCalls) == 0 {
+                        finalText = msg.Content
+                        break
+                }
+
+                // Append the assistant's tool-call message to history
+                messages = append(messages, map[string]interface{}{
+                        "role":       "assistant",
+                        "content":    msg.Content,
+                        "tool_calls": msg.ToolCalls,
+                })
+
+                // Execute each tool call and append results
+                for _, tc := range msg.ToolCalls {
+                        argsBytes, _ := json.Marshal(tc.Function.Arguments)
+                        result := executor.execute(tc.Function.Name, string(argsBytes))
+                        log.Printf("[ollama] tool=%s agent=%s round=%d result_len=%d", tc.Function.Name, agent.ID, round, len(result))
+                        s.saveRunEvent(run.ID, "tool_call", fmt.Sprintf("Tool: %s", tc.Function.Name), map[string]interface{}{
+                                "tool":   tc.Function.Name,
+                                "args":   tc.Function.Arguments,
+                                "result": truncate(result, 1024),
+                        })
+                        messages = append(messages, map[string]interface{}{
+                                "role":    "tool",
+                                "content": result,
+                        })
                 }
         }
-        reqBody := ollamaRequest{
-                Model:    model,
-                Messages: messages,
-                Stream:   false,
-        }
 
-        bodyBytes, _ := json.Marshal(reqBody)
-        ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
-        defer cancel()
-
-        httpReq, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/api/chat", bytes.NewReader(bodyBytes))
-        if err != nil {
-                s.finishRun(run, nil, "failed to build Ollama request: "+err.Error(), "ollama_error", issue)
-                return
-        }
-        httpReq.Header.Set("Content-Type", "application/json")
-        if apiKey != "" {
-                httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-        }
-
-        resp, err := http.DefaultClient.Do(httpReq)
-        if err != nil {
-                s.finishRun(run, nil, "Ollama request failed: "+err.Error(), "ollama_error", issue)
-                return
-        }
-        defer resp.Body.Close()
-
-        if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-                body, _ := io.ReadAll(resp.Body)
-                s.finishRun(run, nil, fmt.Sprintf("Ollama returned HTTP %d: %s", resp.StatusCode, string(body)), "ollama_error", issue)
-                return
-        }
-
-        // Parse response
-        type ollamaResponse struct {
-                Message struct {
-                        Role    string `json:"role"`
-                        Content string `json:"content"`
-                } `json:"message"`
-                Done bool `json:"done"`
-        }
-        var ollamaResp ollamaResponse
-        if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-                s.finishRun(run, nil, "failed to parse Ollama response: "+err.Error(), "ollama_error", issue)
-                return
-        }
-
-        responseText := ollamaResp.Message.Content
-        log.Printf("[ollama] agent=%s run=%s response_len=%d", agent.ID, run.ID, len(responseText))
-
-        // Save response as a run event
-        s.saveRunEvent(run.ID, "llm_response", truncate(responseText, 4096), map[string]interface{}{
+        log.Printf("[ollama] agent=%s run=%s final_len=%d", agent.ID, run.ID, len(finalText))
+        s.saveRunEvent(run.ID, "llm_response", truncate(finalText, 4096), map[string]interface{}{
                 "model":   model,
                 "baseUrl": baseURL,
         })
-
-        // Post response as a comment on the issue if there is one
-        if issue != nil {
-                comment := models.IssueComment{
-                        ID:            uuid.NewString(),
-                        CompanyID:     agent.CompanyID,
-                        IssueID:       issue.ID,
-                        AuthorAgentID: &agent.ID,
-                        Body:          responseText,
-                        CreatedAt:     time.Now(),
-                        UpdatedAt:     time.Now(),
-                }
-                s.db.Create(&comment)
-        }
-
-        // Create a sub-issue recording this run result
-        if issue != nil && responseText != "" {
-                s.createRunResultSubIssue(agent, issue, run, responseText)
-        }
-
-        // Update stdout excerpt with a summary
-        excerpt := truncate(responseText, maxExcerptBytes)
-        s.db.Model(run).Update("stdout_excerpt", excerpt)
-
-        exitCode := 0
-        s.finishRun(run, &exitCode, "", "", issue)
+        s.postRunResult(agent, issue, run, finalText)
 }
 
 // attachmentContext returns text from any readable attachments on the issue,
@@ -483,7 +569,7 @@ func (s *HeartbeatService) saveRunEvent(runID, kind, summary string, detail map[
         s.db.Create(&event)
 }
 
-// runOpenRouterAgent calls the OpenRouter API for openrouter_local adapter type.
+// runOpenRouterAgent calls the OpenRouter API in a multi-turn agentic tool-calling loop.
 func (s *HeartbeatService) runOpenRouterAgent(agent models.Agent, issue *models.Issue, run *models.HeartbeatRun) {
         cfg := agent.AdapterConfig
 
@@ -492,141 +578,176 @@ func (s *HeartbeatService) runOpenRouterAgent(agent models.Agent, issue *models.
                 model = v
         }
 
-        // API key: config field first, then environment variable
         apiKey, _ := cfg["apiKey"].(string)
         if apiKey == "" {
                 apiKey = os.Getenv("OPENROUTER_API_KEY")
         }
         if apiKey == "" {
-                s.finishRun(run, nil, "OpenRouter API key not set (set OPENROUTER_API_KEY or adapterConfig.apiKey)", "missing_api_key", issue)
+                keys := make([]string, 0, len(cfg))
+                for k := range cfg {
+                        keys = append(keys, k)
+                }
+                log.Printf("[openrouter] agent=%s: apiKey missing. adapterConfig keys present: %v", agent.ID, keys)
+                s.finishRun(run, nil, "OpenRouter API key not set — open the agent settings and add your API key in the 'API key' field, then retry", "missing_api_key", issue)
                 return
         }
 
-        timeoutSec := 120
+        timeoutSec := 180
         if v, ok := cfg["timeoutSec"].(float64); ok && v > 0 {
                 timeoutSec = int(v)
         }
 
-        // Build system prompt
-        systemPrompt := fmt.Sprintf("You are %s, an AI agent.", agent.Name)
-        if agent.Capabilities != nil && *agent.Capabilities != "" {
-                systemPrompt = *agent.Capabilities
-        }
-        if fp, ok := cfg["instructionsFilePath"].(string); ok && fp != "" {
-                if data, err := os.ReadFile(fp); err == nil {
-                        systemPrompt = string(data)
-                }
-        }
+        systemPrompt := s.buildSystemPrompt(agent)
+        userMsg := s.buildIssueUserMessage(issue)
+        history := s.buildConversationHistory(issue)
 
-        // Build user message from issue context
-        userMsg := "You have been activated. Please perform your role."
-        if issue != nil {
-                userMsg = fmt.Sprintf("Task: %s", issue.Title)
-                if issue.Description != nil && *issue.Description != "" {
-                        userMsg += "\n\n" + *issue.Description
-                }
-                userMsg += s.attachmentContext(issue.ID)
+        executor := newAgentToolExecutor(s.db, agent)
+        defer executor.close()
+        tools := executor.allTools()
+
+        // Build initial messages as generic maps for flexible tool message support
+        messages := []map[string]interface{}{
+                {"role": "system", "content": systemPrompt},
+                {"role": "user", "content": userMsg},
+        }
+        for _, h := range history {
+                messages = append(messages, map[string]interface{}{"role": h.Role, "content": h.Content})
         }
 
-        s.saveRunEvent(run.ID, "llm_call", fmt.Sprintf("Calling OpenRouter model %s", model), nil)
+        s.saveRunEvent(run.ID, "llm_call", fmt.Sprintf("Calling OpenRouter model %s (tool-enabled)", model), nil)
 
+        // OpenAI-compatible tool call response shapes
+        type orToolCallFn struct {
+                Name      string `json:"name"`
+                Arguments string `json:"arguments"`
+        }
+        type orToolCall struct {
+                ID       string       `json:"id"`
+                Type     string       `json:"type"`
+                Function orToolCallFn `json:"function"`
+        }
         type orMessage struct {
-                Role    string `json:"role"`
-                Content string `json:"content"`
+                Role      string       `json:"role"`
+                Content   *string      `json:"content"`
+                ToolCalls []orToolCall `json:"tool_calls,omitempty"`
         }
-        type orRequest struct {
-                Model    string      `json:"model"`
-                Messages []orMessage `json:"messages"`
-        }
-        orMessages := []orMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: userMsg}}
-        if issue != nil {
-                var priorComments []models.IssueComment
-                s.db.Where("issue_id = ?", issue.ID).Order("created_at asc").Find(&priorComments)
-                for _, c := range priorComments {
-                        role := "user"
-                        if c.AuthorAgentID != nil && *c.AuthorAgentID != "" {
-                                role = "assistant"
-                        }
-                        orMessages = append(orMessages, orMessage{Role: role, Content: c.Body})
-                }
-        }
-        reqBody := orRequest{
-                Model:    model,
-                Messages: orMessages,
-        }
-
-        bodyBytes, _ := json.Marshal(reqBody)
-        ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
-        defer cancel()
-
-        httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewReader(bodyBytes))
-        if err != nil {
-                s.finishRun(run, nil, "failed to build OpenRouter request: "+err.Error(), "openrouter_error", issue)
-                return
-        }
-        httpReq.Header.Set("Content-Type", "application/json")
-        httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-        httpReq.Header.Set("HTTP-Referer", "https://nanoclip.dev")
-        httpReq.Header.Set("X-Title", "NanoClip")
-
-        resp, err := http.DefaultClient.Do(httpReq)
-        if err != nil {
-                s.finishRun(run, nil, "OpenRouter request failed: "+err.Error(), "openrouter_error", issue)
-                return
-        }
-        defer resp.Body.Close()
-
-        if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-                body, _ := io.ReadAll(resp.Body)
-                s.finishRun(run, nil, fmt.Sprintf("OpenRouter returned HTTP %d: %s", resp.StatusCode, string(body)), "openrouter_error", issue)
-                return
-        }
-
-        // Parse OpenAI-compatible response
         type orChoice struct {
-                Message struct {
-                        Content string `json:"content"`
-                } `json:"message"`
+                Message      orMessage `json:"message"`
+                FinishReason string    `json:"finish_reason"`
         }
         type orResponse struct {
                 Choices []orChoice `json:"choices"`
         }
-        var orResp orResponse
-        if err := json.NewDecoder(resp.Body).Decode(&orResp); err != nil {
-                s.finishRun(run, nil, "failed to parse OpenRouter response: "+err.Error(), "openrouter_error", issue)
-                return
-        }
-        if len(orResp.Choices) == 0 {
-                s.finishRun(run, nil, "OpenRouter returned empty choices", "openrouter_error", issue)
-                return
+
+        var finalText string
+
+        for round := 0; round < maxToolRounds; round++ {
+                reqBody := map[string]interface{}{
+                        "model":       model,
+                        "messages":    messages,
+                        "tools":       tools,
+                        "tool_choice": "auto",
+                }
+                bodyBytes, _ := json.Marshal(reqBody)
+                ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+
+                httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewReader(bodyBytes))
+                if err != nil {
+                        cancel()
+                        s.finishRun(run, nil, "failed to build OpenRouter request: "+err.Error(), "openrouter_error", issue)
+                        return
+                }
+                httpReq.Header.Set("Content-Type", "application/json")
+                httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+                httpReq.Header.Set("HTTP-Referer", "https://nanoclip.dev")
+                httpReq.Header.Set("X-Title", "NanoClip")
+
+                resp, err := http.DefaultClient.Do(httpReq)
+                cancel()
+                if err != nil {
+                        s.finishRun(run, nil, "OpenRouter request failed: "+err.Error(), "openrouter_error", issue)
+                        return
+                }
+
+                if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+                        body, _ := io.ReadAll(resp.Body)
+                        resp.Body.Close()
+                        s.finishRun(run, nil, fmt.Sprintf("OpenRouter returned HTTP %d: %s", resp.StatusCode, string(body)), "openrouter_error", issue)
+                        return
+                }
+
+                var orResp orResponse
+                if err := json.NewDecoder(resp.Body).Decode(&orResp); err != nil {
+                        resp.Body.Close()
+                        s.finishRun(run, nil, "failed to parse OpenRouter response: "+err.Error(), "openrouter_error", issue)
+                        return
+                }
+                resp.Body.Close()
+
+                if len(orResp.Choices) == 0 {
+                        s.finishRun(run, nil, "OpenRouter returned empty choices", "openrouter_error", issue)
+                        return
+                }
+
+                choice := orResp.Choices[0]
+                msg := choice.Message
+
+                // No tool calls — final text response
+                if len(msg.ToolCalls) == 0 || choice.FinishReason == "stop" {
+                        if msg.Content != nil {
+                                finalText = *msg.Content
+                        }
+                        break
+                }
+
+                // Append the assistant's tool-call message to history
+                assistantMsg := map[string]interface{}{
+                        "role":       "assistant",
+                        "content":    nil,
+                        "tool_calls": msg.ToolCalls,
+                }
+                messages = append(messages, assistantMsg)
+
+                // Execute each tool call and append the results
+                for _, tc := range msg.ToolCalls {
+                        result := executor.execute(tc.Function.Name, tc.Function.Arguments)
+                        log.Printf("[openrouter] tool=%s agent=%s round=%d result_len=%d", tc.Function.Name, agent.ID, round, len(result))
+                        s.saveRunEvent(run.ID, "tool_call", fmt.Sprintf("Tool: %s", tc.Function.Name), map[string]interface{}{
+                                "tool":   tc.Function.Name,
+                                "args":   tc.Function.Arguments,
+                                "result": truncate(result, 1024),
+                        })
+                        messages = append(messages, map[string]interface{}{
+                                "role":         "tool",
+                                "tool_call_id": tc.ID,
+                                "content":      result,
+                        })
+                }
         }
 
-        responseText := orResp.Choices[0].Message.Content
-        log.Printf("[openrouter] agent=%s run=%s response_len=%d", agent.ID, run.ID, len(responseText))
-
-        s.saveRunEvent(run.ID, "llm_response", truncate(responseText, 4096), map[string]interface{}{
+        log.Printf("[openrouter] agent=%s run=%s final_len=%d", agent.ID, run.ID, len(finalText))
+        s.saveRunEvent(run.ID, "llm_response", truncate(finalText, 4096), map[string]interface{}{
                 "model": model,
         })
+        s.postRunResult(agent, issue, run, finalText)
+}
 
-        if issue != nil {
+// postRunResult posts the agent's final text as an issue comment and finishes the run.
+func (s *HeartbeatService) postRunResult(agent models.Agent, issue *models.Issue, run *models.HeartbeatRun, text string) {
+        if issue != nil && text != "" {
                 comment := models.IssueComment{
                         ID:            uuid.NewString(),
                         CompanyID:     agent.CompanyID,
                         IssueID:       issue.ID,
                         AuthorAgentID: &agent.ID,
-                        Body:          responseText,
+                        Body:          text,
                         CreatedAt:     time.Now(),
                         UpdatedAt:     time.Now(),
                 }
                 s.db.Create(&comment)
         }
 
-        // Create a sub-issue recording this run result
-        if issue != nil && responseText != "" {
-                s.createRunResultSubIssue(agent, issue, run, responseText)
-        }
-
-        excerpt := truncate(responseText, maxExcerptBytes)
+        excerpt := truncate(text, maxExcerptBytes)
         s.db.Model(run).Update("stdout_excerpt", excerpt)
 
         exitCode := 0

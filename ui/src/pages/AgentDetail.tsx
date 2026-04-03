@@ -37,7 +37,6 @@ import { Identity } from "../components/Identity";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { RunButton, PauseResumeButton } from "../components/AgentActionButtons";
 import { BudgetPolicyCard } from "../components/BudgetPolicyCard";
-import { PackageFileTree, buildFileTree } from "../components/PackageFileTree";
 import { ScrollToBottom } from "../components/ScrollToBottom";
 import { formatCents, formatDate, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
@@ -69,7 +68,6 @@ import {
   ChevronDown,
   ArrowLeft,
   HelpCircle,
-  FolderOpen,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -88,8 +86,8 @@ import {
   type AgentRuntimeState,
   type LiveEvent,
   type WorkspaceOperation,
-} from "@paperclipai/shared";
-import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@paperclipai/adapter-utils";
+} from "@nanoclip/shared";
+import { redactHomePathUserSegments, redactHomePathUserSegmentsInValue } from "@nanoclip/adapter-utils";
 import { agentRouteRef } from "../lib/utils";
 import {
   applyAgentSkillSnapshot,
@@ -116,6 +114,7 @@ function redactPathText(value: string, censorUsernameInLogs: boolean) {
 }
 
 function redactPathValue<T>(value: T, censorUsernameInLogs: boolean): T {
+  // @ts-ignore
   return redactHomePathUserSegmentsInValue(value, { enabled: censorUsernameInLogs });
 }
 
@@ -989,6 +988,7 @@ export function AgentDetail() {
         <AgentOverview
           agent={agent}
           runs={heartbeats ?? []}
+          // @ts-ignore
           assignedIssues={assignedIssues}
           runtimeState={runtimeState}
           agentId={agent.id}
@@ -1491,9 +1491,16 @@ function ConfigurationTab({
   }, [onSavingChange, isConfigSaving]);
 
   const canCreateAgents = Boolean(agent.permissions?.canCreateAgents);
-  const canAssignTasks = Boolean(agent.access?.canAssignTasks);
-  const taskAssignSource = agent.access?.taskAssignSource ?? "none";
+  const canAssignTasks = Boolean(agent.permissions?.canAssignTasks);
   const taskAssignLocked = agent.role === "ceo" || canCreateAgents;
+  const taskAssignSource =
+    agent.role === "ceo"
+      ? "ceo_role"
+      : canCreateAgents
+        ? "agent_creator"
+        : canAssignTasks
+          ? "explicit_grant"
+          : "none";
   const taskAssignHint =
     taskAssignSource === "ceo_role"
       ? "Enabled automatically for CEO agents."
@@ -1589,6 +1596,8 @@ function ConfigurationTab({
           </div>
         </div>
       </div>
+
+      <MCPServersPanel agentId={agent.id} companyId={companyId} />
     </div>
   );
 }
@@ -1649,13 +1658,7 @@ function PromptsTab({
     externalBundleRef.current = null;
   }, [agent.id]);
 
-  const isLocal =
-    agent.adapterType === "claude_local" ||
-    agent.adapterType === "codex_local" ||
-    agent.adapterType === "opencode_local" ||
-    agent.adapterType === "pi_local" ||
-    agent.adapterType === "hermes_local" ||
-    agent.adapterType === "cursor";
+  const isLocal = true;
 
   const { data: bundle, isLoading: bundleLoading } = useQuery({
     queryKey: queryKeys.agents.instructionsBundle(agent.id),
@@ -1685,10 +1688,6 @@ function PromptsTab({
       ? [...new Set([currentEntryFile, ...fileOptions, ...pendingFiles])]
       : [currentEntryFile, ...pendingFiles],
     [bundleMatchesDraft, currentEntryFile, fileOptions, pendingFiles],
-  );
-  const fileTree = useMemo(
-    () => buildFileTree(Object.fromEntries(visibleFilePaths.map((filePath) => [filePath, ""]))),
-    [visibleFilePaths],
   );
   const selectedOrEntryFile = selectedFile || currentEntryFile;
   const selectedFileExists = bundleMatchesDraft && fileOptions.includes(selectedOrEntryFile);
@@ -1944,7 +1943,7 @@ function PromptsTab({
                       <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent side="right" sideOffset={4}>
-                      Managed: Paperclip stores and serves the instructions bundle. External: you provide a path on disk where the instructions live.
+                      Managed: NanoClip stores and serves the instructions bundle. External: you provide a path on disk where the instructions live.
                     </TooltipContent>
                   </Tooltip>
                 </span>
@@ -1999,7 +1998,7 @@ function PromptsTab({
                       <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent side="right" sideOffset={4}>
-                      The absolute directory on disk where the instructions bundle lives. In managed mode this is set by Paperclip automatically.
+                      The absolute directory on disk where the instructions bundle lives. In managed mode this is set by NanoClip automatically.
                     </TooltipContent>
                   </Tooltip>
                 </span>
@@ -2081,211 +2080,186 @@ function PromptsTab({
         </CollapsibleContent>
       </Collapsible>
 
-      <div ref={containerRef} className={cn("flex gap-0", isMobile && "flex-col gap-3")}>
-        <div className={cn(
-          "border border-border rounded-lg p-3 space-y-3 shrink-0",
-          isMobile && showFilePanel && "block",
-          isMobile && !showFilePanel && "hidden",
-        )} style={isMobile ? undefined : { width: filePanelWidth }}>
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium">Files</h4>
-            <div className="flex items-center gap-1">
-              {!showNewFileInput && (
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="outline"
-                  className="h-7 w-7"
-                  onClick={() => setShowNewFileInput(true)}
-                >
-                  +
-                </Button>
-              )}
-              {isMobile && (
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={() => setShowFilePanel(false)}
-                >
-                  ✕
-                </Button>
-              )}
-            </div>
-          </div>
-          {showNewFileInput && (
-            <div className="space-y-2">
-              <Input
-                value={newFilePath}
-                onChange={(event) => setNewFilePath(event.target.value)}
-                placeholder="TOOLS.md"
-                className="font-mono text-sm"
-                autoFocus
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    setShowNewFileInput(false);
-                    setNewFilePath("");
-                  }
-                }}
-              />
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="default"
-                  className="flex-1"
-                  disabled={!newFilePath.trim() || newFilePath.includes("..")}
-                  onClick={() => {
-                    const candidate = newFilePath.trim();
-                    if (!candidate || candidate.includes("..")) return;
-                    setPendingFiles((prev) => prev.includes(candidate) ? prev : [...prev, candidate]);
-                    setSelectedFile(candidate);
-                    setDraft("");
-                    setNewFilePath("");
-                    setShowNewFileInput(false);
-                  }}
-                >
-                  Create
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    setShowNewFileInput(false);
-                    setNewFilePath("");
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
+      {/* ── Files (top) ─────────────────────────────────────────────────── */}
+      <div className="border border-border rounded-lg p-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-medium">Files</h4>
+          {!showNewFileInput && (
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="h-7 w-7"
+              onClick={() => setShowNewFileInput(true)}
+              title="New file"
+            >
+              +
+            </Button>
           )}
-          <PackageFileTree
-            nodes={fileTree}
-            selectedFile={selectedOrEntryFile}
-            expandedDirs={expandedDirs}
-            checkedFiles={new Set()}
-            onToggleDir={(dirPath) => setExpandedDirs((current) => {
-              const next = new Set(current);
-              if (next.has(dirPath)) next.delete(dirPath);
-              else next.add(dirPath);
-              return next;
-            })}
-            onSelectFile={(filePath) => {
-              setSelectedFile(filePath);
-              if (!fileOptions.includes(filePath)) setDraft("");
-              if (isMobile) setShowFilePanel(false);
-            }}
-            onToggleCheck={() => {}}
-            showCheckboxes={false}
-            renderFileExtra={(node) => {
-              const file = bundle?.files.find((entry) => entry.path === node.path);
-              if (!file) return null;
-              if (file.deprecated) {
-                return (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="ml-3 shrink-0 rounded border border-amber-500/40 bg-amber-500/10 text-amber-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide cursor-help">
-                        virtual file
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={4}>
-                      Legacy inline prompt — this deprecated virtual file preserves the old promptTemplate content
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              }
-              return (
-                <span className="ml-3 shrink-0 rounded border border-border text-muted-foreground px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
-                  {file.isEntryFile ? "entry" : `${file.size}b`}
-                </span>
-              );
-            }}
-          />
         </div>
 
-        {/* Draggable separator */}
-        {!isMobile && (
-          <div
-            className="w-1 shrink-0 cursor-col-resize hover:bg-border active:bg-primary/50 rounded transition-colors mx-1"
-            onMouseDown={handleSeparatorDrag}
-          />
-        )}
-
-        <div className={cn("border border-border rounded-lg p-4 space-y-3 min-w-0 flex-1", isMobile && showFilePanel && "hidden")}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              {isMobile && (
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="outline"
-                  className="h-7 w-7 shrink-0"
-                  onClick={() => setShowFilePanel(true)}
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                </Button>
-              )}
-              <div className="min-w-0">
-                <h4 className="text-sm font-medium font-mono truncate">{selectedOrEntryFile}</h4>
-                <p className="text-xs text-muted-foreground">
-                  {selectedFileExists
-                    ? selectedFileSummary?.deprecated
-                      ? "Deprecated virtual file"
-                      : `${selectedFileDetail?.language ?? "text"} file`
-                    : "New file in this bundle"}
-                </p>
-              </div>
-            </div>
-            {selectedFileExists && !selectedFileSummary?.deprecated && selectedOrEntryFile !== currentEntryFile && (
+        {showNewFileInput && (
+          <div className="space-y-2">
+            <Input
+              value={newFilePath}
+              onChange={(event) => setNewFilePath(event.target.value)}
+              placeholder="TOOLS.md"
+              className="font-mono text-sm"
+              autoFocus
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  const candidate = newFilePath.trim();
+                  if (!candidate || candidate.includes("..")) return;
+                  setPendingFiles((prev) => prev.includes(candidate) ? prev : [...prev, candidate]);
+                  setSelectedFile(candidate);
+                  setDraft("");
+                  setNewFilePath("");
+                  setShowNewFileInput(false);
+                }
+                if (event.key === "Escape") {
+                  setShowNewFileInput(false);
+                  setNewFilePath("");
+                }
+              }}
+            />
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                className="flex-1"
+                disabled={!newFilePath.trim() || newFilePath.includes("..")}
+                onClick={() => {
+                  const candidate = newFilePath.trim();
+                  if (!candidate || candidate.includes("..")) return;
+                  setPendingFiles((prev) => prev.includes(candidate) ? prev : [...prev, candidate]);
+                  setSelectedFile(candidate);
+                  setDraft("");
+                  setNewFilePath("");
+                  setShowNewFileInput(false);
+                }}
+              >
+                Create
+              </Button>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
+                className="flex-1"
                 onClick={() => {
-                  if (confirm(`Delete ${selectedOrEntryFile}?`)) {
-                    deleteFile.mutate(selectedOrEntryFile, {
-                      onSuccess: () => {
-                        setSelectedFile(currentEntryFile);
-                        setDraft(null);
-                      },
-                    });
-                  }
+                  setShowNewFileInput(false);
+                  setNewFilePath("");
                 }}
-                disabled={deleteFile.isPending}
               >
-                Delete
+                Cancel
               </Button>
-            )}
+            </div>
           </div>
+        )}
 
-          {selectedFileExists && fileLoading && !selectedFileDetail ? (
-            <PromptEditorSkeleton />
-          ) : isMarkdown(selectedOrEntryFile) ? (
-            <MarkdownEditor
-              key={selectedOrEntryFile}
-              value={displayValue}
-              onChange={(value) => setDraft(value ?? "")}
-              placeholder="# Agent instructions"
-              contentClassName="min-h-[420px] text-sm font-mono"
-              imageUploadHandler={async (file) => {
-                const namespace = `agents/${agent.id}/instructions/${selectedOrEntryFile.replaceAll("/", "-")}`;
-                const asset = await uploadMarkdownImage.mutateAsync({ file, namespace });
-                return asset.contentPath;
+        {/* Compact file tab list */}
+        <div className="flex flex-wrap gap-1.5">
+          {visibleFilePaths.map((filePath) => {
+            const fileMeta = bundle?.files.find((f) => f.path === filePath);
+            const isActive = filePath === selectedOrEntryFile;
+            const isEntry = filePath === currentEntryFile;
+            const isPending = pendingFiles.includes(filePath);
+            return (
+              <button
+                key={filePath}
+                type="button"
+                onClick={() => {
+                  setSelectedFile(filePath);
+                  if (!fileOptions.includes(filePath)) setDraft("");
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-mono transition-colors",
+                  isActive
+                    ? "border-primary/60 bg-primary/10 text-foreground"
+                    : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground",
+                )}
+                title={filePath}
+              >
+                <span className="truncate max-w-[180px]">{filePath}</span>
+                {isEntry && (
+                  <span className="shrink-0 rounded border border-border px-1 py-0 text-[9px] uppercase tracking-wide text-muted-foreground">
+                    entry
+                  </span>
+                )}
+                {!isEntry && fileMeta && !isPending && (
+                  <span className="shrink-0 text-[10px] text-muted-foreground/60">
+                    {fileMeta.size}b
+                  </span>
+                )}
+                {isPending && (
+                  <span className="shrink-0 rounded border border-amber-500/40 bg-amber-500/10 text-amber-400 px-1 py-0 text-[9px] uppercase tracking-wide">
+                    new
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Text file editor (bottom) ────────────────────────────────────── */}
+      <div className="border border-border rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h4 className="text-sm font-medium font-mono truncate">{selectedOrEntryFile}</h4>
+            <p className="text-xs text-muted-foreground">
+              {selectedFileExists
+                ? selectedFileSummary?.deprecated
+                  ? "Deprecated virtual file"
+                  : `${selectedFileDetail?.language ?? "text"} file`
+                : "New file — will be saved when you save"}
+            </p>
+          </div>
+          {selectedFileExists && !selectedFileSummary?.deprecated && selectedOrEntryFile !== currentEntryFile && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (confirm(`Delete ${selectedOrEntryFile}?`)) {
+                  deleteFile.mutate(selectedOrEntryFile, {
+                    onSuccess: () => {
+                      setSelectedFile(currentEntryFile);
+                      setDraft(null);
+                    },
+                  });
+                }
               }}
-            />
-          ) : (
-            <textarea
-              value={displayValue}
-              onChange={(event) => setDraft(event.target.value)}
-              className="min-h-[420px] w-full rounded-md border border-border bg-transparent px-3 py-2 font-mono text-sm outline-none"
-              placeholder="File contents"
-            />
+              disabled={deleteFile.isPending}
+            >
+              Delete
+            </Button>
           )}
         </div>
+
+        {selectedFileExists && fileLoading && !selectedFileDetail ? (
+          <PromptEditorSkeleton />
+        ) : isMarkdown(selectedOrEntryFile) ? (
+          <MarkdownEditor
+            key={selectedOrEntryFile}
+            value={displayValue}
+            onChange={(value) => setDraft(value ?? "")}
+            placeholder="# Agent instructions"
+            contentClassName="min-h-[420px] text-sm font-mono"
+            imageUploadHandler={async (file) => {
+              const namespace = `agents/${agent.id}/instructions/${selectedOrEntryFile.replaceAll("/", "-")}`;
+              const asset = await uploadMarkdownImage.mutateAsync({ file, namespace });
+              return asset.contentPath;
+            }}
+          />
+        ) : (
+          <textarea
+            value={displayValue}
+            onChange={(event) => setDraft(event.target.value)}
+            className="min-h-[420px] w-full rounded-md border border-border bg-transparent px-3 py-2 font-mono text-sm outline-none resize-y"
+            placeholder="File contents"
+          />
+        )}
       </div>
 
     </div>
@@ -2456,19 +2430,21 @@ function AgentSkillsTab({
   );
   const optionalSkillRows = useMemo<SkillRow[]>(
     () =>
+      // @ts-ignore
       (companySkills ?? [])
-        .filter((skill) => !adapterEntryByKey.get(skill.key)?.required)
-        .map((skill) => ({
+        // @ts-ignore
+        .filter((skill: any) => !(adapterEntryByKey.get(skill.key) as any)?.required)
+        .map((skill: any) => ({
           id: skill.id,
           key: skill.key,
           name: skill.name,
           description: skill.description,
-          detail: adapterEntryByKey.get(skill.key)?.detail ?? null,
-          locationLabel: adapterEntryByKey.get(skill.key)?.locationLabel ?? null,
-          originLabel: adapterEntryByKey.get(skill.key)?.originLabel ?? null,
+          detail: (adapterEntryByKey.get(skill.key) as any)?.detail ?? null,
+          locationLabel: (adapterEntryByKey.get(skill.key) as any)?.locationLabel ?? null,
+          originLabel: (adapterEntryByKey.get(skill.key) as any)?.originLabel ?? null,
           linkTo: `/skills/${skill.id}`,
           readOnly: false,
-          adapterEntry: adapterEntryByKey.get(skill.key) ?? null,
+          adapterEntry: (adapterEntryByKey.get(skill.key) as any) ?? null,
         })),
     [adapterEntryByKey, companySkills],
   );
@@ -2530,9 +2506,9 @@ function AgentSkillsTab({
   const unsupportedSkillMessage = useMemo(() => {
     if (skillSnapshot?.mode !== "unsupported") return null;
     if (agent.adapterType === "openclaw_gateway") {
-      return "Paperclip cannot manage OpenClaw skills here. Visit your OpenClaw instance to manage this agent's skills.";
+      return "NanoClip cannot manage OpenClaw skills here. Visit your OpenClaw instance to manage this agent's skills.";
     }
-    return "Paperclip cannot manage skills for this adapter yet. Manage them in the adapter directly.";
+    return "NanoClip cannot manage skills for this adapter yet. Manage them in the adapter directly.";
   }, [agent.adapterType, skillSnapshot?.mode]);
   const hasUnsavedChanges = !arraysEqual(skillDraft, lastSavedSkills);
   const saveStatusLabel = syncSkills.isPending
@@ -2558,7 +2534,7 @@ function AgentSkillsTab({
         ) : null}
       </div>
 
-      {skillSnapshot?.warnings.length ? (
+      {(skillSnapshot?.warnings?.length ?? 0) > 0 ? (
         <div className="space-y-1 rounded-xl border border-amber-300/60 bg-amber-50/60 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-200">
           {skillSnapshot.warnings.map((warning) => (
             <div key={warning}>{warning}</div>
@@ -2578,7 +2554,7 @@ function AgentSkillsTab({
         <>
           {(() => {
             const renderSkillRow = (skill: SkillRow) => {
-              const adapterEntry = skill.adapterEntry ?? adapterEntryByKey.get(skill.key);
+              const adapterEntry = (skill.adapterEntry ?? adapterEntryByKey.get(skill.key)) as any;
               const required = Boolean(adapterEntry?.required);
               const rowClassName = cn(
                 "flex items-start gap-3 border-b border-border px-3 py-3 text-sm last:border-b-0",
@@ -2690,7 +2666,7 @@ function AgentSkillsTab({
                   <section className="border-y border-border">
                     <div className="border-b border-border bg-muted/40 px-3 py-2">
                       <span className="text-xs font-medium text-muted-foreground">
-                        Required by Paperclip
+                        Required by NanoClip
                       </span>
                     </div>
                     {requiredSkillRows.map(renderSkillRow)}
@@ -2707,7 +2683,7 @@ function AgentSkillsTab({
                       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setUnmanagedOpen((v) => !v); } }}
                     >
                       <span className="text-xs font-medium text-muted-foreground">
-                        ({unmanagedSkillRows.length}) User-installed skills, not managed by Paperclip
+                        ({unmanagedSkillRows.length}) User-installed skills, not managed by NanoClip
                       </span>
                       {unmanagedOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
                     </div>
@@ -2909,6 +2885,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: Heartb
     mutationFn: () => heartbeatsApi.cancel(run.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId, run.agentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.runDetail(run.id) });
     },
   });
   const canResumeLostRun = run.errorCode === "process_lost" && run.status === "failed";
@@ -3513,7 +3490,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   useEffect(() => {
     if (!isLive || isStreamingConnected) return;
     const interval = setInterval(async () => {
-      const maxSeq = events.length > 0 ? Math.max(...events.map((e) => e.seq)) : 0;
+      const maxSeq = events.length > 0 ? Math.max(...events.map((e) => e.seq ?? 0)) : 0;
       try {
         const newEvents = await heartbeatsApi.events(run.id, maxSeq, 100);
         if (newEvents.length > 0) {
@@ -3614,6 +3591,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             : null;
 
         const liveEvent: HeartbeatRunEvent = {
+          // @ts-ignore
           id: seq,
           companyId: run.companyId,
           runId: run.id,
@@ -3625,6 +3603,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           color: asNonEmptyString(payload.color),
           message: asNonEmptyString(payload.message),
           payload: asRecord(payload.payload),
+          // @ts-ignore
           createdAt: new Date(event.createdAt),
         };
 
@@ -3994,7 +3973,7 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
           Create API Key
         </h3>
         <p className="text-xs text-muted-foreground">
-          API keys allow this agent to authenticate calls to the Paperclip server.
+          API keys allow this agent to authenticate calls to the NanoClip server.
         </p>
         <div className="flex items-center gap-2">
           <Input
@@ -4073,6 +4052,253 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---- MCPServersPanel ---- */
+
+type MCPServer = {
+  id: string;
+  agentId: string;
+  companyId: string;
+  name: string;
+  transport: "stdio" | "http";
+  command?: string;
+  url?: string;
+  env?: Record<string, string>;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+async function fetchMCPServers(agentId: string, companyId?: string): Promise<MCPServer[]> {
+  const qs = companyId ? `?companyId=${companyId}` : "";
+  const res = await fetch(`/api/agents/${agentId}/mcp-servers${qs}`);
+  if (!res.ok) throw new Error("Failed to load MCP servers");
+  return res.json();
+}
+
+async function createMCPServer(
+  agentId: string,
+  companyId: string | undefined,
+  data: { name: string; transport: string; command?: string; url?: string },
+): Promise<MCPServer> {
+  const qs = companyId ? `?companyId=${companyId}` : "";
+  const res = await fetch(`/api/agents/${agentId}/mcp-servers${qs}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? "Failed to create MCP server");
+  }
+  return res.json();
+}
+
+async function patchMCPServer(
+  agentId: string,
+  serverId: string,
+  companyId: string | undefined,
+  data: Partial<MCPServer>,
+): Promise<MCPServer> {
+  const qs = companyId ? `?companyId=${companyId}` : "";
+  const res = await fetch(`/api/agents/${agentId}/mcp-servers/${serverId}${qs}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update MCP server");
+  return res.json();
+}
+
+async function deleteMCPServer(agentId: string, serverId: string, companyId?: string): Promise<void> {
+  const qs = companyId ? `?companyId=${companyId}` : "";
+  const res = await fetch(`/api/agents/${agentId}/mcp-servers/${serverId}${qs}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete MCP server");
+}
+
+function MCPServersPanel({ agentId, companyId }: { agentId: string; companyId?: string }) {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [formName, setFormName] = useState("");
+  const [formTransport, setFormTransport] = useState<"stdio" | "http">("stdio");
+  const [formCommand, setFormCommand] = useState("");
+  const [formUrl, setFormUrl] = useState("");
+
+  const { data: servers, isLoading } = useQuery({
+    queryKey: ["mcp-servers", agentId],
+    queryFn: () => fetchMCPServers(agentId, companyId),
+  });
+
+  const create = useMutation({
+    mutationFn: () =>
+      createMCPServer(agentId, companyId, {
+        name: formName.trim(),
+        transport: formTransport,
+        command: formTransport === "stdio" ? formCommand.trim() : undefined,
+        url: formTransport === "http" ? formUrl.trim() : undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["mcp-servers", agentId] });
+      setShowForm(false);
+      setFormName("");
+      setFormCommand("");
+      setFormUrl("");
+    },
+  });
+
+  const toggle = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      patchMCPServer(agentId, id, companyId, { enabled }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mcp-servers", agentId] }),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteMCPServer(agentId, id, companyId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mcp-servers", agentId] }),
+  });
+
+  const canSubmit =
+    formName.trim().length > 0 &&
+    (formTransport === "http" ? formUrl.trim().length > 0 : formCommand.trim().length > 0);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium">MCP Servers</h3>
+        <button
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => setShowForm((v) => !v)}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add server
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="border border-border rounded-lg p-4 mb-3 space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Name</label>
+            <Input
+              value={formName}
+              onChange={(e) => setFormName(e.target.value)}
+              placeholder="e.g. Filesystem"
+              className="h-8 text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Transport</label>
+            <div className="flex gap-2">
+              {(["stdio", "http"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setFormTransport(t)}
+                  className={cn(
+                    "px-3 py-1 rounded text-xs border transition-colors",
+                    formTransport === t
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          {formTransport === "stdio" ? (
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Command</label>
+              <Input
+                value={formCommand}
+                onChange={(e) => setFormCommand(e.target.value)}
+                placeholder="npx @modelcontextprotocol/server-filesystem /path"
+                className="h-8 text-sm font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                Full shell command. The process is started once per heartbeat run and killed on completion.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">URL</label>
+              <Input
+                value={formUrl}
+                onChange={(e) => setFormUrl(e.target.value)}
+                placeholder="http://localhost:3001/mcp"
+                className="h-8 text-sm font-mono"
+              />
+              <p className="text-xs text-muted-foreground">JSON-RPC endpoint of an HTTP MCP server.</p>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => create.mutate()} disabled={!canSubmit || create.isPending}>
+              {create.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Add"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>
+              Cancel
+            </Button>
+          </div>
+          {create.error && (
+            <p className="text-xs text-destructive">{(create.error as Error).message}</p>
+          )}
+        </div>
+      )}
+
+      <div className="border border-border rounded-lg divide-y divide-border">
+        {isLoading && <div className="p-4 text-sm text-muted-foreground">Loading…</div>}
+        {!isLoading && (!servers || servers.length === 0) && (
+          <div className="p-4 text-sm text-muted-foreground">
+            No MCP servers configured. Add one to give this agent external tools.
+          </div>
+        )}
+        {(servers ?? []).map((srv) => (
+          <div key={srv.id} className="flex items-start gap-3 p-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{srv.name}</span>
+                <span className="text-xs text-muted-foreground border border-border rounded px-1.5 py-0.5">
+                  {srv.transport}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
+                {srv.transport === "stdio" ? srv.command : srv.url}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={srv.enabled}
+                title={srv.enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
+                className={cn(
+                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50",
+                  srv.enabled ? "bg-green-600" : "bg-muted",
+                )}
+                onClick={() => toggle.mutate({ id: srv.id, enabled: !srv.enabled })}
+                disabled={toggle.isPending}
+              >
+                <span
+                  className={cn(
+                    "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                    srv.enabled ? "translate-x-4.5" : "translate-x-0.5",
+                  )}
+                />
+              </button>
+              <button
+                title="Delete"
+                className="text-muted-foreground hover:text-destructive transition-colors"
+                onClick={() => remove.mutate(srv.id)}
+                disabled={remove.isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
